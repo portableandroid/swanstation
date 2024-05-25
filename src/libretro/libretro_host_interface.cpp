@@ -33,6 +33,10 @@ Log_SetChannel(LibretroHostInterface);
 #include "core/gpu_hw_d3d11.h"
 #endif
 
+#ifdef PORTANDROID
+extern "C" const char *cb_emu_get_bios_directory();
+#endif
+
 RETRO_API unsigned retro_api_version(void)
 {
   return RETRO_API_VERSION;
@@ -1042,11 +1046,15 @@ bool LibretroHostInterface::HasCoreVariablesChanged()
 
 std::string LibretroHostInterface::GetBIOSDirectory()
 {
+#ifdef PORTANDROID
+  return cb_emu_get_bios_directory();
+#else
   // Assume BIOS files are located in system directory.
   const char* system_directory = nullptr;
   if (!g_retro_environment_callback(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system_directory) || !system_directory)
     return GetProgramDirectoryRelativePath("system");
   return system_directory;
+#endif
 }
 
 void LibretroHostInterface::LoadSettings()
