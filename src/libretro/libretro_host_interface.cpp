@@ -1329,10 +1329,27 @@ void LibretroHostInterface::UpdateControllersAnalogController(u32 index)
 
   if (m_rumble_interface_valid && g_settings.controller_enable_rumble)
   {
+#ifdef PORTANDROID
+    if(index < 4) {
+      static u16 strong_old[4] = {0, 0, 0, 0};
+      static u16 weak_old[4] = {0, 0, 0, 0};
+      const u16 strong = static_cast<u16>(static_cast<u32>(controller->GetVibrationMotorStrength(0) * 65535.0f));
+      const u16 weak = static_cast<u16>(static_cast<u32>(controller->GetVibrationMotorStrength(1) * 65535.0f));
+      if(strong!= strong_old[index]) {
+        m_rumble_interface.set_rumble_state(index, RETRO_RUMBLE_STRONG, strong);
+        strong_old[index] = strong;
+      }
+      if(weak!= weak_old[index]) {
+        m_rumble_interface.set_rumble_state(index, RETRO_RUMBLE_WEAK, weak);
+        weak_old[index] = weak;
+      }
+    }
+#else
     const u16 strong = static_cast<u16>(static_cast<u32>(controller->GetVibrationMotorStrength(0) * 65535.0f));
     const u16 weak = static_cast<u16>(static_cast<u32>(controller->GetVibrationMotorStrength(1) * 65535.0f));
     m_rumble_interface.set_rumble_state(index, RETRO_RUMBLE_STRONG, strong);
     m_rumble_interface.set_rumble_state(index, RETRO_RUMBLE_WEAK, weak);
+#endif
   }
 
   const u16 PadCombo_L1 = g_retro_input_state_callback(index, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L);
@@ -1344,7 +1361,6 @@ void LibretroHostInterface::UpdateControllersAnalogController(u32 index)
   const u16 PadCombo_Start = g_retro_input_state_callback(index, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START);
   const u16 PadCombo_Select = g_retro_input_state_callback(index, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT);
   int analog_press_status = 0;
-
   // Check if we're allowed to press the analog button, and then set the selected combo.
   if (!analog_pressed)
   {
