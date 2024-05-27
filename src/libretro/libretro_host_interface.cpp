@@ -34,6 +34,8 @@ Log_SetChannel(LibretroHostInterface);
 #endif
 
 #ifdef PORTANDROID
+#define _cb_type_lock_
+#include "emu_retro.h"
 extern "C" const char *cb_emu_get_bios_directory();
 #endif
 
@@ -520,6 +522,10 @@ bool LibretroHostInterface::UpdateGameSettings()
 
   if (!System::IsShutdown() && !System::GetRunningCode().empty())
   {
+#ifdef PORTANDROID
+    //Set CD ID and label
+    cb_itf.cb_rom_info_set(NULL, System::GetRunningCode().c_str(), 0);
+#endif
     new_game_settings = GetSettingsForGame(System::GetRunningCode());
     if (new_game_settings)
       Log_InfoPrintf("Game settings found for %s", System::GetRunningCode().c_str());
