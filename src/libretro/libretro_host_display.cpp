@@ -26,7 +26,11 @@ static retro_pixel_format GetRetroPixelFormat(HostDisplayPixelFormat format)
 
 LibretroHostDisplay::LibretroHostDisplay()
 {
+#ifdef PORTANDROID
+  retro_pixel_format pf = RETRO_PIXEL_FORMAT_XRGB8888;
+#else
   retro_pixel_format pf = RETRO_PIXEL_FORMAT_RGB565;
+#endif
   if (g_retro_environment_callback(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &pf))
     m_current_pixel_format = pf;
 }
