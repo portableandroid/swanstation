@@ -11,7 +11,6 @@
 #include "common/make_array.h"
 #include "common/state_wrapper.h"
 #include "common/string_util.h"
-#include "common/timestamp.h"
 #include "controller.h"
 #include "cpu_code_cache.h"
 #include "cpu_core.h"
@@ -43,6 +42,10 @@
 #include <fstream>
 #include <limits>
 #include <thread>
+
+#include <compat/strl.h>
+#include <file/file_path.h>
+
 Log_SetChannel(System);
 
 SystemBootParameters::SystemBootParameters() = default;
@@ -471,14 +474,17 @@ DiscRegion GetRegionForImage(CDImage* cdi)
 
 DiscRegion GetRegionForExe(const char* path)
 {
-  auto fp = FileSystem::OpenManagedCFile(path, "rb");
+  BIOS::PSEXEHeader header;
+  RFILE *fp = FileSystem::OpenRFile(path, "rb");
   if (!fp)
     return DiscRegion::Other;
-
-  BIOS::PSEXEHeader header;
-  if (std::fread(&header, sizeof(header), 1, fp.get()) != 1)
+  if (rfread(&header, sizeof(header), 1, fp) != 1)
+  {
+    filestream_close(fp);
     return DiscRegion::Other;
+  }
 
+  filestream_close(fp);
   return BIOS::GetPSExeDiscRegion(header);
 }
 
@@ -561,7 +567,7 @@ std::unique_ptr<CDImage> OpenCDImage(const char* path, Common::Error* error, boo
   {
     const std::string ppf_filename(FileSystem::BuildRelativePath(
       path, FileSystem::ReplaceExtension(FileSystem::GetDisplayNameFromPath(path), "ppf")));
-    if (FileSystem::FileExists(ppf_filename.c_str()))
+    if (!ppf_filename.empty() && path_is_valid(ppf_filename.c_str()))
     {
       media = CDImage::OverlayPPFPatch(ppf_filename.c_str(), CDImage::OpenFlags::None, std::move(media));
       if (!media)
@@ -832,10 +838,11 @@ bool CreateGPU(GPURenderer renderer)
     case GPURenderer::HardwareD3D11:
       g_gpu = GPU::CreateHardwareD3D11Renderer();
       break;
-
+#ifdef USE_D3D12
     case GPURenderer::HardwareD3D12:
       g_gpu = GPU::CreateHardwareD3D12Renderer();
       break;
+#endif
 #endif
 
     case GPURenderer::Software:
@@ -1128,8 +1135,8 @@ bool SaveState(ByteStream* state)
   // fill in header
   header.magic = SAVE_STATE_MAGIC;
   header.version = SAVE_STATE_VERSION;
-  StringUtil::Strlcpy(header.title, s_running_game_title.c_str(), sizeof(header.title));
-  StringUtil::Strlcpy(header.game_code, s_running_game_code.c_str(), sizeof(header.game_code));
+  strlcpy(header.title, s_running_game_title.c_str(), sizeof(header.title));
+  strlcpy(header.game_code, s_running_game_code.c_str(), sizeof(header.game_code));
 
   if (g_cdrom.HasMedia())
   {
@@ -1234,22 +1241,22 @@ void SetThrottleFrequency(float frequency)
 
 static bool LoadEXEToRAM(const char* filename, bool patch_bios)
 {
-  std::FILE* fp = FileSystem::OpenCFile(filename, "rb");
+  RFILE* fp = FileSystem::OpenRFile(filename, "rb");
   if (!fp)
   {
     Log_ErrorPrintf("Failed to open exe file '%s'", filename);
     return false;
   }
 
-  std::fseek(fp, 0, SEEK_END);
-  const u32 file_size = static_cast<u32>(std::ftell(fp));
-  std::fseek(fp, 0, SEEK_SET);
+  rfseek(fp, 0, SEEK_END);
+  const u32 file_size = static_cast<u32>(rftell(fp));
+  rfseek(fp, 0, SEEK_SET);
 
   BIOS::PSEXEHeader header;
-  if (std::fread(&header, sizeof(header), 1, fp) != 1 || !BIOS::IsValidPSExeHeader(header, file_size))
+  if (rfread(&header, sizeof(header), 1, fp) != 1 || !BIOS::IsValidPSExeHeader(header, file_size))
   {
     Log_ErrorPrintf("'%s' is not a valid PS-EXE", filename);
-    std::fclose(fp);
+    rfclose(fp);
     return false;
   }
 
@@ -1268,9 +1275,9 @@ static bool LoadEXEToRAM(const char* filename, bool patch_bios)
   if (file_data_size >= 4)
   {
     std::vector<u32> data_words((file_data_size + 3) / 4);
-    if (std::fread(data_words.data(), file_data_size, 1, fp) != 1)
+    if (rfread(data_words.data(), file_data_size, 1, fp) != 1)
     {
-      std::fclose(fp);
+      rfclose(fp);
       return false;
     }
 
@@ -1283,7 +1290,7 @@ static bool LoadEXEToRAM(const char* filename, bool patch_bios)
     }
   }
 
-  std::fclose(fp);
+  rfclose(fp);
 
   // patch the BIOS to jump to the executable directly
   const u32 r_pc = header.initial_pc;
@@ -1296,7 +1303,7 @@ static bool LoadEXEToRAM(const char* filename, bool patch_bios)
 bool LoadEXE(const char* filename)
 {
   const std::string libps_path(FileSystem::BuildRelativePath(filename, "libps.exe"));
-  if (!libps_path.empty() && FileSystem::FileExists(libps_path.c_str()) && !LoadEXEToRAM(libps_path.c_str(), false))
+  if (!libps_path.empty() && path_is_valid(libps_path.c_str()) && !LoadEXEToRAM(libps_path.c_str(), false))
   {
     Log_ErrorPrintf("Failed to load libps.exe from '%s'", libps_path.c_str());
     return false;
@@ -1369,26 +1376,26 @@ bool InjectEXEFromBuffer(const void* buffer, u32 buffer_size, bool patch_bios)
 
 bool SetExpansionROM(const char* filename)
 {
-  std::FILE* fp = FileSystem::OpenCFile(filename, "rb");
+  RFILE* fp = FileSystem::OpenRFile(filename, "rb");
   if (!fp)
   {
     Log_ErrorPrintf("Failed to open '%s'", filename);
     return false;
   }
 
-  std::fseek(fp, 0, SEEK_END);
-  const u32 size = static_cast<u32>(std::ftell(fp));
-  std::fseek(fp, 0, SEEK_SET);
+  rfseek(fp, 0, SEEK_END);
+  const u32 size = static_cast<u32>(rftell(fp));
+  rfseek(fp, 0, SEEK_SET);
 
   std::vector<u8> data(size);
-  if (std::fread(data.data(), size, 1, fp) != 1)
+  if (rfread(data.data(), size, 1, fp) != 1)
   {
     Log_ErrorPrintf("Failed to read ROM data from '%s'", filename);
-    std::fclose(fp);
+    rfclose(fp);
     return false;
   }
 
-  std::fclose(fp);
+  rfclose(fp);
 
   Log_InfoPrintf("Loaded expansion ROM from '%s': %u bytes", filename, size);
   Bus::SetExpansionROM(std::move(data));

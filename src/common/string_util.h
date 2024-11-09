@@ -11,7 +11,7 @@
 
 #if defined(__has_include) && __has_include(<charconv>)
 #include <charconv>
-#ifndef _MSC_VER
+#ifndef _WIN32
 #include <sstream>
 #endif
 #else
@@ -27,13 +27,10 @@ std::string StdStringFromFormatV(const char* format, std::va_list ap);
 /// Checks if a wildcard matches a search string.
 bool WildcardMatch(const char* subject, const char* mask, bool case_sensitive = true);
 
-/// Safe version of strlcpy.
-std::size_t Strlcpy(char* dst, const char* src, std::size_t size);
-
 /// Platform-independent strcasecmp
 static inline int Strcasecmp(const char* s1, const char* s2)
 {
-#ifdef _MSC_VER
+#ifdef _WIN32
   return _stricmp(s1, s2);
 #else
   return strcasecmp(s1, s2);
@@ -43,7 +40,7 @@ static inline int Strcasecmp(const char* s1, const char* s2)
 /// Platform-independent strcasecmp
 static inline int Strncasecmp(const char* s1, const char* s2, std::size_t n)
 {
-#ifdef _MSC_VER
+#ifdef _WIN32
   return _strnicmp(s1, s2, n);
 #else
   return strncasecmp(s1, s2, n);
@@ -124,14 +121,5 @@ ALWAYS_INLINE static bool EndsWith(const std::string_view& str, const char* suff
   const std::size_t suffix_length = std::strlen(suffix);
   return (str.length() >= suffix_length && str.compare(str.length() - suffix_length, suffix_length, suffix) == 0);
 }
-
-#ifdef _WIN32
-/// Converts the specified UTF-8 string to a wide string.
-std::wstring UTF8StringToWideString(const std::string_view& str);
-bool UTF8StringToWideString(std::wstring& dest, const std::string_view& str);
-/// Converts the specified wide string to a UTF-8 string.
-std::string WideStringToUTF8String(const std::wstring_view& str);
-bool WideStringToUTF8String(std::string& dest, const std::wstring_view& str);
-#endif
 
 } // namespace StringUtil

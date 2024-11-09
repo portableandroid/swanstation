@@ -5,7 +5,7 @@ Log_SetChannel(Common::MemoryArena);
 
 #if defined(_WIN32)
 #include "common/windows_headers.h"
-#elif defined(ANDROID)
+#elif defined(__ANDROID__)
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <linux/ashmem.h>
@@ -22,7 +22,7 @@ Log_SetChannel(Common::MemoryArena);
 namespace Common {
 
 // Borrowed from Dolphin
-#ifdef ANDROID
+#ifdef __ANDROID__
 #define ASHMEM_DEVICE "/dev/ashmem"
 
 static int AshmemCreateFileMapping(const char* name, size_t size)
@@ -163,9 +163,9 @@ bool MemoryArena::Create(size_t size, bool writable, bool executable)
   shm_unlink(file_mapping_name.c_str());
 
   // ensure it's the correct size
-  if (ftruncate64(m_shmem_fd, static_cast<off64_t>(size)) < 0)
+  if (ftruncate(m_shmem_fd, static_cast<off_t>(size)) < 0)
   {
-    Log_ErrorPrintf("ftruncate64(%zu) failed: %d", size, errno);
+    Log_ErrorPrintf("ftruncate(%zu) failed: %d", size, errno);
     return false;
   }
 

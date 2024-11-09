@@ -214,7 +214,7 @@ void Settings::Load(SettingsInterface& si)
   cdrom_read_speedup = si.GetIntValue("CDROM", "ReadSpeedup", 1);
   cdrom_seek_speedup = si.GetIntValue("CDROM", "SeekSpeedup", 1);
 
-  use_old_mdec_routines = si.GetBoolValue("Hacks", "UseOldMDECRoutines", false);
+  use_old_mdec_routines = si.GetBoolValue("Hacks", "OldMDECRoutines", true);
 
   bios_patch_fast_boot = si.GetBoolValue("BIOS", "PatchFastBoot", DEFAULT_FAST_BOOT_VALUE);
 
@@ -560,8 +560,8 @@ float Settings::GetDisplayAspectRatioValue() const
   }
 }
 
-static std::array<const char*, 7> s_controller_type_names = {
-  {"None", "DigitalController", "AnalogController", "AnalogJoystick", "NamcoGunCon", "PlayStationMouse", "NeGcon"}};
+static std::array<const char*, 8> s_controller_type_names = {
+  {"None", "DigitalController", "AnalogController", "AnalogJoystick", "NamcoGunCon", "PlayStationMouse", "NeGcon", "NeGconRumble"}};
 
 std::optional<ControllerType> Settings::ParseControllerTypeName(const char* str)
 {

@@ -71,8 +71,6 @@ add_library(common
   string_util.h
   timer.cpp
   timer.h
-  timestamp.cpp
-  timestamp.h
   types.h
   vulkan/builders.cpp
   vulkan/builders.h
@@ -97,7 +95,9 @@ add_library(common
 
 target_include_directories(common PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_include_directories(common PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
+target_include_directories(common PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../../dep/libretro-common/include")
 target_link_libraries(common PRIVATE glad stb Threads::Threads libchdr glslang vulkan-loader zlib)
+target_compile_definitions(common PRIVATE -D__LIBRETRO__)
 
 if(WIN32)
   target_sources(common PRIVATE
@@ -111,22 +111,27 @@ if(WIN32)
     d3d11/stream_buffer.h
     d3d11/texture.cpp
     d3d11/texture.h
-    d3d12/context.cpp
-    d3d12/context.h
-    d3d12/descriptor_heap_manager.cpp
-    d3d12/descriptor_heap_manager.h
-    d3d12/shader_cache.cpp
-    d3d12/shader_cache.h
-    d3d12/staging_texture.cpp
-    d3d12/staging_texture.h
-    d3d12/stream_buffer.cpp
-    d3d12/stream_buffer.h
-    d3d12/texture.cpp
-    d3d12/texture.h
-    d3d12/util.cpp
-    d3d12/util.h
     windows_headers.h
   )
+  if(USE_D3D12)
+    target_sources(common PRIVATE
+      d3d12/context.cpp
+      d3d12/context.h
+      d3d12/descriptor_heap_manager.cpp
+      d3d12/descriptor_heap_manager.h
+      d3d12/shader_cache.cpp
+      d3d12/shader_cache.h
+      d3d12/staging_texture.cpp
+      d3d12/staging_texture.h
+      d3d12/stream_buffer.cpp
+      d3d12/stream_buffer.h
+      d3d12/texture.cpp
+      d3d12/texture.h
+      d3d12/util.cpp
+      d3d12/util.h
+    )
+  endif()
+
   target_link_libraries(common PRIVATE d3dcompiler.lib)
 endif()
 

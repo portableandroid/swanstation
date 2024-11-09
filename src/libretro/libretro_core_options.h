@@ -843,7 +843,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
    },
    "Disabled"},
   {"swanstation_Controller_AnalogCombo",
-   "DualShock Analog Mode Combo",
+   "Analog Mode Combo",
    NULL,
    "Sets the combo used to toggle analog mode.",
    NULL,
@@ -864,9 +864,9 @@ struct retro_core_option_v2_definition option_defs_us[] = {
    },
    "3"},
   {"swanstation_Controller_EnableRumble",
-   "DualShock Enable Rumble",
+   "Enable Rumble",
    NULL,
-   "Enable haptic feedback when using a rumble-equipped gamepad with input device set to 'DualShock'.",
+   "Enable haptic feedback when using a rumble-equipped gamepad with a supported input device.",
    NULL,
    "port",
    {
@@ -1933,15 +1933,11 @@ struct retro_core_option_v2_definition option_defs_us[] = {
      {"Disabled", "Disabled (Slower)"},
      {"LUT", "LUT (Faster)"},
 #if defined(CPU_X64) || defined(CPU_AARCH64)
-     {"MMap", "MMap (Hardware, Fastest, 64-Bit Only)"},
+     {"MMap", "MMap (Hardware, Faster, 64-Bit Only)"},
 #endif
      {NULL, NULL},
    },
-#if defined(CPU_X64) || defined(CPU_AARCH64)
-   "MMap"
-#else
     "LUT"
-#endif
   },
   {"swanstation_CPU_FastmemRewrite",
    "CPU Recompiler Fast Memory Access Rewrite",
@@ -1959,12 +1955,12 @@ struct retro_core_option_v2_definition option_defs_us[] = {
   {"swanstation_TextureReplacements_EnableVRAMWriteReplacements",
    "Enable VRAM Write Texture Replacement",
    NULL,
-   "Replace WRAM write textures with DuckStation formatted texture packs from the textures folder inside the RetroArch "
-   "install directory. "
 #ifdef WIN32
-   "Currently only works with the D3D11 & Vulkan renderers.",
+   "Replace VRAM write textures with DuckStation formatted texture packs from the swanstation\textures folder inside "
+   "the RetroArch system directory. Currently only works with the D3D11 & Vulkan renderers.",
 #else
-   "Currently only works with the Vulkan renderer.",
+   "Replace VRAM write textures with DuckStation formatted texture packs from the swanstation/textures folder inside "
+   "the RetroArch system directory. Currently only works with the Vulkan renderer.",
 #endif
    NULL,
    "advanced",
@@ -2022,10 +2018,12 @@ struct retro_core_option_v2_definition option_defs_us[] = {
      {NULL, NULL},
    },
    "false"},
-  {"swanstation_Hacks_UseOldMDECRoutines",
+  {"swanstation_Hacks_OldMDECRoutines",
    "Use Old MDEC Routines",
    NULL,
-   "Use old routines for MDEC content.",
+   "Use old routines for MDEC content. The newer routines may look better with some games, worse with others. "
+   "As VRAM write texture replacements require either the old or new routines to function, it's adviced to toggle "
+   "this setting to the routines required.",
    NULL,
    "advanced",
    {
@@ -2033,7 +2031,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
      {"false", "Disabled"},
      {NULL, NULL},
    },
-   "false"},
+   "true"},
   {"swanstation_Audio_FastHook",
    "Use Alternative Audio Hook (Restart)",
    NULL,

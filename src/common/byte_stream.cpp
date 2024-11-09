@@ -1,6 +1,7 @@
 #include "byte_stream.h"
 #include "file_system.h"
 #include "string_util.h"
+#include <config.h>
 #include <algorithm>
 #include <cerrno>
 #include <cstdio>
@@ -13,16 +14,17 @@
 #include <direct.h>
 #include <io.h>
 #include <share.h>
+#include <malloc.h>
 #else
 #include <sys/stat.h>
 #include <sys/types.h>
+#  if defined(HAVE_ALLOCA_H)
+#    include <alloca.h>
+#  endif
 #endif
 
-#ifdef _MSC_VER
-#include <malloc.h>
-#else
-#include <alloca.h>
-#endif
+#include <file/file_path.h>
+#include <encodings/utf.h>
 
 class FileByteStream : public ByteStream
 {
@@ -238,7 +240,9 @@ public:
     {
 #if defined(_WIN32)
       // delete the temporary file
-      if (!DeleteFileW(StringUtil::UTF8StringToWideString(m_temporaryFileName).c_str())) { }
+      wchar_t *a = utf8_to_utf16_string_alloc(m_temporaryFileName.c_str());
+      if (!DeleteFileW(a)) { }
+      free(a);
 #else
       // delete the temporary file
       if (remove(m_temporaryFileName.c_str()) < 0) { }
@@ -261,11 +265,14 @@ public:
 
 #if defined(_WIN32)
     // move the atomic file name to the original file name
-    if (!MoveFileExW(StringUtil::UTF8StringToWideString(m_temporaryFileName).c_str(),
-                     StringUtil::UTF8StringToWideString(m_originalFileName).c_str(), MOVEFILE_REPLACE_EXISTING))
+    wchar_t *a = utf8_to_utf16_string_alloc(m_temporaryFileName.c_str());
+    wchar_t *b = utf8_to_utf16_string_alloc(m_originalFileName.c_str());
+    if (!MoveFileExW(a, b, MOVEFILE_REPLACE_EXISTING))
       m_discarded = true;
     else
       m_committed = true;
+    free(a);
+    free(b);
 #else
     // move the atomic file name to the original file name
     if (rename(m_temporaryFileName.c_str(), m_originalFileName.c_str()) < 0)
@@ -685,14 +692,14 @@ void GrowableMemoryByteStream::Grow(u32 MinimumGrowth)
   ResizeMemory(NewSize);
 }
 
-#if defined(_MSC_VER)
+#if defined(_WIN32)
 
 std::unique_ptr<ByteStream> ByteStream_OpenFileStream(const char* fileName, u32 openMode)
 {
   if ((openMode & (BYTESTREAM_OPEN_CREATE | BYTESTREAM_OPEN_WRITE)) == BYTESTREAM_OPEN_WRITE)
   {
     // if opening with write but not create, the path must exist.
-    if (!FileSystem::FileExists(fileName))
+    if (!path_is_valid(fileName))
       return nullptr;
   }
 
@@ -703,7 +710,7 @@ std::unique_ptr<ByteStream> ByteStream_OpenFileStream(const char* fileName, u32 
   {
     // if the file exists, use r+, otherwise w+
     // HACK: if we're not truncating, and the file exists (we want to only update it), we still have to use r+
-    if (!FileSystem::FileExists(fileName))
+    if (!path_is_valid(fileName))
     {
       modeString[modeStringLength++] = 'w';
       if (openMode & BYTESTREAM_OPEN_READ)
@@ -769,17 +776,13 @@ std::unique_ptr<ByteStream> ByteStream_OpenFileStream(const char* fileName, u32 
         tempStr[i] = '\0';
 
         // check if it exists
-        struct stat s;
-        if (stat(tempStr, &s) < 0)
+	if (!path_is_valid(tempStr))
         {
           if (errno == ENOENT)
           {
             // try creating it
-            if (_mkdir(tempStr) < 0)
-            {
-              // no point trying any further down the chain
+	    if (!path_mkdir(tempStr)) // no point trying any further down the chain
               break;
-            }
           }
           else // if (errno == ENOTDIR)
           {
@@ -790,11 +793,7 @@ std::unique_ptr<ByteStream> ByteStream_OpenFileStream(const char* fileName, u32 
         }
 
 // append platform path seperator
-#if defined(_WIN32)
         tempStr[i] = '\\';
-#else
-        tempStr[i] = '/';
-#endif
       }
       else
       {
@@ -813,7 +812,7 @@ std::unique_ptr<ByteStream> ByteStream_OpenFileStream(const char* fileName, u32 
 
     // fill in random characters
     _mktemp_s(temporaryFileName, fileNameLength + 8);
-    const std::wstring wideTemporaryFileName(StringUtil::UTF8StringToWideString(temporaryFileName));
+    wchar_t *wideTemporaryFileName = utf8_to_utf16_string_alloc(temporaryFileName);
 
     // massive hack here
     DWORD desiredAccess = GENERIC_WRITE;
@@ -821,17 +820,21 @@ std::unique_ptr<ByteStream> ByteStream_OpenFileStream(const char* fileName, u32 
       desiredAccess |= GENERIC_READ;
 
     HANDLE hFile =
-      CreateFileW(wideTemporaryFileName.c_str(), desiredAccess, FILE_SHARE_DELETE, NULL, CREATE_NEW, 0, NULL);
+      CreateFileW(wideTemporaryFileName, desiredAccess, FILE_SHARE_DELETE, NULL, CREATE_NEW, 0, NULL);
 
     if (hFile == INVALID_HANDLE_VALUE)
+    {
+      free(wideTemporaryFileName);
       return nullptr;
+    }
 
     // get fd from this
     int fd = _open_osfhandle(reinterpret_cast<intptr_t>(hFile), 0);
     if (fd < 0)
     {
       CloseHandle(hFile);
-      DeleteFileW(wideTemporaryFileName.c_str());
+      DeleteFileW(wideTemporaryFileName);
+      free(wideTemporaryFileName);
       return nullptr;
     }
 
@@ -840,7 +843,8 @@ std::unique_ptr<ByteStream> ByteStream_OpenFileStream(const char* fileName, u32 
     if (!pTemporaryFile)
     {
       _close(fd);
-      DeleteFileW(wideTemporaryFileName.c_str());
+      DeleteFileW(wideTemporaryFileName);
+      free(wideTemporaryFileName);
       return nullptr;
     }
 
@@ -851,34 +855,37 @@ std::unique_ptr<ByteStream> ByteStream_OpenFileStream(const char* fileName, u32 
     // do we need to copy the existing file into this one?
     if (!(openMode & BYTESTREAM_OPEN_TRUNCATE))
     {
-      FILE* pOriginalFile = FileSystem::OpenCFile(fileName, "rb");
+      RFILE* pOriginalFile = FileSystem::OpenRFile(fileName, "rb");
       if (!pOriginalFile)
       {
         // this will delete the temporary file
         pStream->Discard();
+	free(wideTemporaryFileName);
         return nullptr;
       }
 
       static const size_t BUFFERSIZE = 4096;
       u8 buffer[BUFFERSIZE];
-      while (!feof(pOriginalFile))
+      while (!rfeof(pOriginalFile))
       {
-        size_t nBytes = fread(buffer, BUFFERSIZE, sizeof(u8), pOriginalFile);
+        size_t nBytes = rfread(buffer, BUFFERSIZE, sizeof(u8), pOriginalFile);
         if (nBytes == 0)
           break;
 
         if (pStream->Write(buffer, (u32)nBytes) != (u32)nBytes)
         {
           pStream->Discard();
-          fclose(pOriginalFile);
+          rfclose(pOriginalFile);
+	  free(wideTemporaryFileName);
           return nullptr;
         }
       }
 
       // close original file
-      fclose(pOriginalFile);
+      rfclose(pOriginalFile);
     }
 
+    free(wideTemporaryFileName);
     // return pointer
     return pStream;
   }
@@ -900,8 +907,7 @@ std::unique_ptr<ByteStream> ByteStream_OpenFileStream(const char* fileName, u32 
   if ((openMode & (BYTESTREAM_OPEN_CREATE | BYTESTREAM_OPEN_WRITE)) == BYTESTREAM_OPEN_WRITE)
   {
     // if opening with write but not create, the path must exist.
-    struct stat s;
-    if (stat(fileName, &s) < 0)
+    if (!path_is_valid(fileName))
       return nullptr;
   }
 
@@ -934,28 +940,6 @@ std::unique_ptr<ByteStream> ByteStream_OpenFileStream(const char* fileName, u32 
     const u32 fileNameLength = static_cast<u32>(std::strlen(fileName));
     char* tempStr = (char*)alloca(fileNameLength + 1);
 
-#if defined(_WIN32)
-    // check if it starts with a drive letter. if so, skip ahead
-    if (fileNameLength >= 2 && fileName[1] == ':')
-    {
-      if (fileNameLength <= 3)
-      {
-        // create a file called driveletter: or driveletter:\ ? you must be crazy
-        i = fileNameLength;
-      }
-      else
-      {
-        std::memcpy(tempStr, fileName, 3);
-        i = 3;
-      }
-    }
-    else
-    {
-      // start at beginning
-      i = 0;
-    }
-#endif
-
     // step through each path component, create folders as necessary
     for (i = 0; i < fileNameLength; i++)
     {
@@ -965,21 +949,13 @@ std::unique_ptr<ByteStream> ByteStream_OpenFileStream(const char* fileName, u32 
         tempStr[i] = '\0';
 
         // check if it exists
-        struct stat s;
-        if (stat(tempStr, &s) < 0)
+	if (!path_is_valid(tempStr))
         {
           if (errno == ENOENT)
           {
             // try creating it
-#if defined(_WIN32)
-            if (mkdir(tempStr) < 0)
-#else
-            if (mkdir(tempStr, 0777) < 0)
-#endif
-            {
-              // no point trying any further down the chain
+	    if (!path_mkdir(tempStr)) // no point trying any further down the chain
               break;
-            }
           }
           else // if (errno == ENOTDIR)
           {
@@ -990,11 +966,7 @@ std::unique_ptr<ByteStream> ByteStream_OpenFileStream(const char* fileName, u32 
         }
 
 // append platform path seperator
-#if defined(_WIN32)
-        tempStr[i] = '\\';
-#else
         tempStr[i] = '/';
-#endif
       }
       else
       {
@@ -1011,15 +983,18 @@ std::unique_ptr<ByteStream> ByteStream_OpenFileStream(const char* fileName, u32 
     char* temporaryFileName = (char*)alloca(fileNameLength + 8);
     std::snprintf(temporaryFileName, fileNameLength + 8, "%s.XXXXXX", fileName);
 
+    std::FILE* pTemporaryFile;
     // fill in random characters
-#if defined(__linux__) || defined(__ANDROID__) || defined(__APPLE__)
-    mkstemp(temporaryFileName);
+#ifdef HAVE_MKSTEMP
+    int fd = mkstemp(temporaryFileName);
+    if (fd == -1)
+      return nullptr;
+    pTemporaryFile = fdopen(fd, modeString);
 #else
-    mktemp(temporaryFileName);
+    if (mktemp(temporaryFileName) == nullptr)
+      return nullptr;
+    pTemporaryFile = std::fopen(temporaryFileName, modeString);
 #endif
-
-    // open the file
-    std::FILE* pTemporaryFile = std::fopen(temporaryFileName, modeString);
     if (pTemporaryFile == nullptr)
       return nullptr;
 
@@ -1030,7 +1005,7 @@ std::unique_ptr<ByteStream> ByteStream_OpenFileStream(const char* fileName, u32 
     // do we need to copy the existing file into this one?
     if (!(openMode & BYTESTREAM_OPEN_TRUNCATE))
     {
-      std::FILE* pOriginalFile = std::fopen(fileName, "rb");
+      RFILE* pOriginalFile = rfopen(fileName, "rb");
       if (!pOriginalFile)
       {
         // this will delete the temporary file
@@ -1040,22 +1015,22 @@ std::unique_ptr<ByteStream> ByteStream_OpenFileStream(const char* fileName, u32 
 
       static const size_t BUFFERSIZE = 4096;
       u8 buffer[BUFFERSIZE];
-      while (!std::feof(pOriginalFile))
+      while (!rfeof(pOriginalFile))
       {
-        size_t nBytes = std::fread(buffer, BUFFERSIZE, sizeof(u8), pOriginalFile);
+        size_t nBytes = rfread(buffer, BUFFERSIZE, sizeof(u8), pOriginalFile);
         if (nBytes == 0)
           break;
 
         if (pStream->Write(buffer, (u32)nBytes) != (u32)nBytes)
         {
           pStream->SetErrorState();
-          std::fclose(pOriginalFile);
+          rfclose(pOriginalFile);
           return nullptr;
         }
       }
 
       // close original file
-      std::fclose(pOriginalFile);
+      rfclose(pOriginalFile);
     }
 
     // return pointer

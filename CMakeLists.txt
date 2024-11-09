@@ -7,18 +7,12 @@ message("CMake System Name: ${CMAKE_SYSTEM_NAME}")
 # Pull in modules.
 set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/CMakeModules/")
 
-# Platform detection.
-if(${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
-  set(LINUX TRUE)
-elseif(${CMAKE_SYSTEM_NAME} STREQUAL "FreeBSD")
-  set(FREEBSD TRUE)
-endif()
-
 # Set minimum OS version for macOS. 10.14 should work.
 set(CMAKE_OSX_DEPLOYMENT_TARGET "10.14.0" CACHE STRING "")
 
 set(USE_EGL OFF)
 set(USE_WAYLAND OFF)
+set(USE_D3D12 OFF)
 set(USE_FBDEV OFF)
 set(USE_EVDEV OFF)
 
@@ -48,7 +42,7 @@ endif()
 string(TIMESTAMP BUILD_TIMESTAMP UTC)
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src/libretro/version.h.in" "${CMAKE_CURRENT_SOURCE_DIR}/src/libretro/version.h" @ONLY)
 
-# Release build optimizations for MSVC.
+# MSVC specific tweaks.
 if(MSVC)
   add_definitions("/D_CRT_SECURE_NO_WARNINGS")
   foreach(config CMAKE_C_FLAGS CMAKE_CXX_FLAGS)
@@ -58,22 +52,13 @@ if(MSVC)
     # Enable intrinsic functions, disable minimal rebuild, UTF-8 source, set __cplusplus version.
     set(${config} "${${config}} /Oi /Gm- /utf-8 /Zc:__cplusplus")
   endforeach()
-
-# RelWithDebInfo is set to Ob1 instead of Ob2.   
-string(REPLACE "/Ob1" "/Ob2" CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO}")
-string(REPLACE "/Ob1" "/Ob2" CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO}")
-
-# Disable incremental linking in RelWithDebInfo.
-string(REPLACE "/INCREMENTAL" "/INCREMENTAL:NO" CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO}")
+endif()
 
 # COMDAT folding/remove unused functions.
 set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} /OPT:REF /OPT:ICF")
-set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} /OPT:REF /OPT:ICF")
-
-endif()
 
 # Enable LTO/LTCG on Release builds.
-if(${CMAKE_BUILD_TYPE} STREQUAL "Release")
+if(CMAKE_BUILD_TYPE MATCHES "Release")
   cmake_policy(SET CMP0069 NEW)
   include(CheckIPOSupported)
   check_ipo_supported(RESULT IPO_IS_SUPPORTED)
@@ -153,7 +138,7 @@ find_package(Threads REQUIRED)
 
 # Enable large file support on Linux 32-bit platforms.
 # Android is deliberately ommitted here as it didn't support 64-bit ops on files until Android 7/N.
-if((LINUX OR FREEBSD) AND (${CPU_ARCH} STREQUAL "x86" OR ${CPU_ARCH} STREQUAL "aarch32"))
+if(${CMAKE_SYSTEM_NAME} STREQUAL "Linux" AND (${CPU_ARCH} STREQUAL "x86" OR ${CPU_ARCH} STREQUAL "aarch32"))
   add_definitions("-D_FILE_OFFSET_BITS=64")
 endif()
 

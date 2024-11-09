@@ -13,8 +13,6 @@
 Log_SetChannel(CDImagePBP);
 
 using namespace PBP;
-using FileSystem::FSeek64;
-using FileSystem::FTell64;
 
 class CDImagePBP final : public CDImage
 {
@@ -44,13 +42,6 @@ private:
     u16 size;
   };
 
-#if _DEBUG
-  static void PrintPBPHeaderInfo(const PBPHeader& pbp_header);
-  static void PrintSFOHeaderInfo(const SFOHeader& sfo_header);
-  static void PrintSFOIndexTableEntry(const SFOIndexTableEntry& sfo_index_table_entry, size_t i);
-  static void PrintSFOTable(const SFOTable& sfo_table);
-#endif
-
   bool LoadPBPHeader();
   bool LoadSFOHeader();
   bool LoadSFOIndexTable();
@@ -65,7 +56,7 @@ private:
 
   static const std::string* LookupStringSFOTableEntry(const char* key, const SFOTable& table);
 
-  FILE* m_file = nullptr;
+  RFILE* m_file = nullptr;
 
   PBPHeader m_pbp_header;
   SFOHeader m_sfo_header;
@@ -120,7 +111,7 @@ static void SwapByteOrder(T& val)
 CDImagePBP::~CDImagePBP()
 {
   if (m_file)
-    fclose(m_file);
+    rfclose(m_file);
 
   inflateEnd(&m_inflate_stream);
 }
@@ -130,16 +121,16 @@ bool CDImagePBP::LoadPBPHeader()
   if (!m_file)
     return false;
 
-  if (FSeek64(m_file, 0, SEEK_END) != 0)
+  if (FileSystem::FSeek64(m_file, 0, SEEK_END) != 0)
     return false;
 
-  if (FTell64(m_file) < 0)
+  if (FileSystem::FTell64(m_file) < 0)
     return false;
 
-  if (FSeek64(m_file, 0, SEEK_SET) != 0)
+  if (FileSystem::FSeek64(m_file, 0, SEEK_SET) != 0)
     return false;
 
-  if (fread(&m_pbp_header, sizeof(PBPHeader), 1, m_file) != 1)
+  if (rfread(&m_pbp_header, sizeof(PBPHeader), 1, m_file) != 1)
   {
     Log_ErrorPrint("Unable to read PBP header");
     return false;
@@ -151,19 +142,15 @@ bool CDImagePBP::LoadPBPHeader()
     return false;
   }
 
-#if _DEBUG
-  PrintPBPHeaderInfo(m_pbp_header);
-#endif
-
   return true;
 }
 
 bool CDImagePBP::LoadSFOHeader()
 {
-  if (FSeek64(m_file, m_pbp_header.param_sfo_offset, SEEK_SET) != 0)
+  if (FileSystem::FSeek64(m_file, m_pbp_header.param_sfo_offset, SEEK_SET) != 0)
     return false;
 
-  if (fread(&m_sfo_header, sizeof(SFOHeader), 1, m_file) != 1)
+  if (rfread(&m_sfo_header, sizeof(SFOHeader), 1, m_file) != 1)
     return false;
 
   if (strncmp((char*)m_sfo_header.magic, "\0PSF", 4) != 0)
@@ -171,10 +158,6 @@ bool CDImagePBP::LoadSFOHeader()
     Log_ErrorPrint("SFO magic number mismatch");
     return false;
   }
-
-#if _DEBUG
-  PrintSFOHeaderInfo(m_sfo_header);
-#endif
 
   return true;
 }
@@ -184,17 +167,12 @@ bool CDImagePBP::LoadSFOIndexTable()
   m_sfo_index_table.clear();
   m_sfo_index_table.resize(m_sfo_header.num_table_entries);
 
-  if (FSeek64(m_file, m_pbp_header.param_sfo_offset + sizeof(m_sfo_header), SEEK_SET) != 0)
+  if (FileSystem::FSeek64(m_file, m_pbp_header.param_sfo_offset + sizeof(m_sfo_header), SEEK_SET) != 0)
     return false;
 
-  if (fread(m_sfo_index_table.data(), sizeof(SFOIndexTableEntry), m_sfo_header.num_table_entries, m_file) !=
+  if (rfread(m_sfo_index_table.data(), sizeof(SFOIndexTableEntry), m_sfo_header.num_table_entries, m_file) !=
       m_sfo_header.num_table_entries)
     return false;
-
-#if _DEBUG
-  for (size_t i = 0; i < static_cast<size_t>(m_sfo_header.num_table_entries); ++i)
-    PrintSFOIndexTableEntry(m_sfo_index_table[i], i);
-#endif
 
   return true;
 }
@@ -210,7 +188,7 @@ bool CDImagePBP::LoadSFOTable()
     u32 abs_data_offset =
       m_pbp_header.param_sfo_offset + m_sfo_header.data_table_offset + m_sfo_index_table[i].data_offset;
 
-    if (FSeek64(m_file, abs_key_offset, SEEK_SET) != 0)
+    if (FileSystem::FSeek64(m_file, abs_key_offset, SEEK_SET) != 0)
     {
       Log_ErrorPrintf("Failed seek to key for SFO table entry %zu", i);
       return false;
@@ -218,13 +196,13 @@ bool CDImagePBP::LoadSFOTable()
 
     // Longest known key string is 20 characters total, including the null character
     char key_cstr[20] = {};
-    if (fgets(key_cstr, sizeof(key_cstr), m_file) == nullptr)
+    if (rfgets(key_cstr, sizeof(key_cstr), m_file) == nullptr)
     {
       Log_ErrorPrintf("Failed to read key string for SFO table entry %zu", i);
       return false;
     }
 
-    if (FSeek64(m_file, abs_data_offset, SEEK_SET) != 0)
+    if (FileSystem::FSeek64(m_file, abs_data_offset, SEEK_SET) != 0)
     {
       Log_ErrorPrintf("Failed seek to data for SFO table entry %zu", i);
       return false;
@@ -238,7 +216,7 @@ bool CDImagePBP::LoadSFOTable()
     else if (m_sfo_index_table[i].data_type == 0x0204) // null-terminated UTF-8 character string
     {
       std::vector<char> data_cstr(m_sfo_index_table[i].data_size);
-      if (fgets(data_cstr.data(), static_cast<int>(data_cstr.size() * sizeof(char)), m_file) == nullptr)
+      if (rfgets(data_cstr.data(), static_cast<int>(data_cstr.size() * sizeof(char)), m_file) == nullptr)
       {
         Log_ErrorPrintf("Failed to read data string for SFO table entry %zu", i);
         return false;
@@ -249,7 +227,7 @@ bool CDImagePBP::LoadSFOTable()
     else if (m_sfo_index_table[i].data_type == 0x0404) // uint32_t
     {
       u32 val;
-      if (fread(&val, sizeof(u32), 1, m_file) != 1)
+      if (rfread(&val, sizeof(u32), 1, m_file) != 1)
       {
         Log_ErrorPrintf("Failed to read unsigned data value for SFO table entry %zu", i);
         return false;
@@ -264,10 +242,6 @@ bool CDImagePBP::LoadSFOTable()
       return false;
     }
   }
-
-#if _DEBUG
-  PrintSFOTable(m_sfo_table);
-#endif
 
   return true;
 }
@@ -327,7 +301,7 @@ bool CDImagePBP::Open(const char* filename, Common::Error* error)
     return false;
   }
 
-  m_file = FileSystem::OpenCFile(filename, "rb");
+  m_file = FileSystem::OpenRFile(filename, "rb");
   if (!m_file)
     return false;
 
@@ -377,12 +351,12 @@ bool CDImagePBP::Open(const char* filename, Common::Error* error)
   }
 
   // Start parsing ISO stuff
-  if (FSeek64(m_file, m_pbp_header.data_psar_offset, SEEK_SET) != 0)
+  if (FileSystem::FSeek64(m_file, m_pbp_header.data_psar_offset, SEEK_SET) != 0)
     return false;
 
   // Check "PSTITLEIMG000000" for multi-disc
   char data_psar_magic[16] = {};
-  if (fread(data_psar_magic, sizeof(data_psar_magic), 1, m_file) != 1)
+  if (rfread(data_psar_magic, sizeof(data_psar_magic), 1, m_file) != 1)
     return false;
 
   if (strncmp(data_psar_magic, "PSTITLEIMG000000", 16) == 0) // Multi-disc header found
@@ -391,11 +365,11 @@ bool CDImagePBP::Open(const char* filename, Common::Error* error)
     // of 0. There are also some disc hashes, a serial (from one of the discs, but used as an identifier for the entire
     // "title image" header), and some other offsets, but we don't really need to check those
 
-    if (FSeek64(m_file, m_pbp_header.data_psar_offset + 0x200, SEEK_SET) != 0)
+    if (FileSystem::FSeek64(m_file, m_pbp_header.data_psar_offset + 0x200, SEEK_SET) != 0)
       return false;
 
     u32 disc_table[DISC_TABLE_NUM_ENTRIES] = {};
-    if (fread(disc_table, sizeof(u32), DISC_TABLE_NUM_ENTRIES, m_file) != DISC_TABLE_NUM_ENTRIES)
+    if (rfread(disc_table, sizeof(u32), DISC_TABLE_NUM_ENTRIES, m_file) != DISC_TABLE_NUM_ENTRIES)
       return false;
 
     // Ignore encrypted files
@@ -479,11 +453,11 @@ bool CDImagePBP::OpenDisc(u32 index, Common::Error* error)
 
   // Go to ISO header
   const u32 iso_header_start = m_disc_offsets[index];
-  if (FSeek64(m_file, iso_header_start, SEEK_SET) != 0)
+  if (FileSystem::FSeek64(m_file, iso_header_start, SEEK_SET) != 0)
     return false;
 
   char iso_header_magic[12] = {};
-  if (fread(iso_header_magic, sizeof(iso_header_magic), 1, m_file) != 1)
+  if (rfread(iso_header_magic, sizeof(iso_header_magic), 1, m_file) != 1)
     return false;
 
   if (strncmp(iso_header_magic, "PSISOIMG0000", 12) != 0)
@@ -494,10 +468,10 @@ bool CDImagePBP::OpenDisc(u32 index, Common::Error* error)
 
   // Ignore encrypted files
   u32 pgd_magic;
-  if (FSeek64(m_file, iso_header_start + 0x400, SEEK_SET) != 0)
+  if (FileSystem::FSeek64(m_file, iso_header_start + 0x400, SEEK_SET) != 0)
     return false;
 
-  if (fread(&pgd_magic, sizeof(pgd_magic), 1, m_file) != 1)
+  if (rfread(&pgd_magic, sizeof(pgd_magic), 1, m_file) != 1)
     return false;
 
   if (pgd_magic == 0x44475000) // "\0PGD"
@@ -510,12 +484,12 @@ bool CDImagePBP::OpenDisc(u32 index, Common::Error* error)
   }
 
   // Read in the TOC
-  if (FSeek64(m_file, iso_header_start + 0x800, SEEK_SET) != 0)
+  if (FileSystem::FSeek64(m_file, iso_header_start + 0x800, SEEK_SET) != 0)
     return false;
 
   for (u32 i = 0; i < TOC_NUM_ENTRIES; i++)
   {
-    if (fread(&m_toc[i], sizeof(m_toc[i]), 1, m_file) != 1)
+    if (rfread(&m_toc[i], sizeof(m_toc[i]), 1, m_file) != 1)
       return false;
   }
 
@@ -523,21 +497,21 @@ bool CDImagePBP::OpenDisc(u32 index, Common::Error* error)
   // for both data and audio
 
   // Get the offset of the compressed iso
-  if (FSeek64(m_file, iso_header_start + 0xBFC, SEEK_SET) != 0)
+  if (FileSystem::FSeek64(m_file, iso_header_start + 0xBFC, SEEK_SET) != 0)
     return false;
 
   u32 iso_offset;
-  if (fread(&iso_offset, sizeof(iso_offset), 1, m_file) != 1)
+  if (rfread(&iso_offset, sizeof(iso_offset), 1, m_file) != 1)
     return false;
 
   // Generate block info table
-  if (FSeek64(m_file, iso_header_start + 0x4000, SEEK_SET) != 0)
+  if (FileSystem::FSeek64(m_file, iso_header_start + 0x4000, SEEK_SET) != 0)
     return false;
 
   for (u32 i = 0; i < BLOCK_TABLE_NUM_ENTRIES; i++)
   {
     BlockTableEntry bte;
-    if (fread(&bte, sizeof(bte), 1, m_file) != 1)
+    if (rfread(&bte, sizeof(bte), 1, m_file) != 1)
       return false;
 
     // Only store absolute file offset into a BlockInfo if this is a valid block
@@ -736,19 +710,19 @@ bool CDImagePBP::InitDecompressionStream()
 
 bool CDImagePBP::DecompressBlock(const BlockInfo& block_info)
 {
-  if (FSeek64(m_file, block_info.offset, SEEK_SET) != 0)
+  if (FileSystem::FSeek64(m_file, block_info.offset, SEEK_SET) != 0)
     return false;
 
   // Compression level 0 has compressed size == decompressed size.
   if (block_info.size == m_decompressed_block.size())
   {
-    return (fread(m_decompressed_block.data(), sizeof(u8), m_decompressed_block.size(), m_file) ==
-            m_decompressed_block.size());
+    return (rfread(m_decompressed_block.data(), sizeof(u8), m_decompressed_block.size(), m_file) == static_cast<int64_t>(
+            m_decompressed_block.size()));
   }
 
   m_compressed_block.resize(block_info.size);
 
-  if (fread(m_compressed_block.data(), sizeof(u8), m_compressed_block.size(), m_file) != m_compressed_block.size())
+  if (rfread(m_compressed_block.data(), sizeof(u8), m_compressed_block.size(), m_file) != static_cast<int64_t>(m_compressed_block.size()))
     return false;
 
   m_inflate_stream.next_in = m_compressed_block.data();
@@ -805,59 +779,6 @@ bool CDImagePBP::ReadSectorFromIndex(void* buffer, const Index& index, LBA lba_i
   std::memcpy(buffer, &m_decompressed_block[offset_in_block], RAW_SECTOR_SIZE);
   return true;
 }
-
-#if _DEBUG
-void CDImagePBP::PrintPBPHeaderInfo(const PBPHeader& pbp_header)
-{
-  printf("PBP header info\n");
-  printf("PBP format version 0x%08X\n", pbp_header.version);
-  printf("File offsets\n");
-  printf("PARAM.SFO 0x%08X PARSE\n", pbp_header.param_sfo_offset);
-  printf("ICON0.PNG 0x%08X IGNORE\n", pbp_header.icon0_png_offset);
-  printf("ICON1.PNG 0x%08X IGNORE\n", pbp_header.icon1_png_offset);
-  printf("PIC0.PNG  0x%08X IGNORE\n", pbp_header.pic0_png_offset);
-  printf("PIC1.PNG  0x%08X IGNORE\n", pbp_header.pic1_png_offset);
-  printf("SND0.AT3  0x%08X IGNORE\n", pbp_header.snd0_at3_offset);
-  printf("DATA.PSP  0x%08X IGNORE\n", pbp_header.data_psp_offset);
-  printf("DATA.PSAR 0x%08X PARSE\n", pbp_header.data_psar_offset);
-  printf("\n");
-}
-
-void CDImagePBP::PrintSFOHeaderInfo(const SFOHeader& sfo_header)
-{
-  printf("SFO header info\n");
-  printf("SFO format version    0x%08X\n", sfo_header.version);
-  printf("SFO key table offset  0x%08X\n", sfo_header.key_table_offset);
-  printf("SFO data table offset 0x%08X\n", sfo_header.data_table_offset);
-  printf("SFO table entry count 0x%08X\n", sfo_header.num_table_entries);
-  printf("\n");
-}
-
-void CDImagePBP::PrintSFOIndexTableEntry(const SFOIndexTableEntry& sfo_index_table_entry, size_t i)
-{
-  printf("SFO index table entry %zu\n", i);
-  printf("Key offset      0x%08X\n", sfo_index_table_entry.key_offset);
-  printf("Data type       0x%08X\n", sfo_index_table_entry.data_type);
-  printf("Data size       0x%08X\n", sfo_index_table_entry.data_size);
-  printf("Total data size 0x%08X\n", sfo_index_table_entry.data_total_size);
-  printf("Data offset     0x%08X\n", sfo_index_table_entry.data_offset);
-  printf("\n");
-}
-
-void CDImagePBP::PrintSFOTable(const SFOTable& sfo_table)
-{
-  for (auto it = sfo_table.begin(); it != sfo_table.end(); ++it)
-  {
-    std::string key_value = it->first;
-    SFOTableDataValue data_value = it->second;
-
-    if (std::holds_alternative<std::string>(data_value))
-      printf("Key: %s, Data: %s\n", key_value.c_str(), std::get<std::string>(data_value).c_str());
-    else if (std::holds_alternative<u32>(data_value))
-      printf("Key: %s, Data: %u\n", key_value.c_str(), std::get<u32>(data_value));
-  }
-}
-#endif
 
 bool CDImagePBP::HasSubImages() const
 {

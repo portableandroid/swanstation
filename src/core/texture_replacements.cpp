@@ -4,6 +4,7 @@
 #include "common/platform.h"
 #include "common/string_util.h"
 #include "common/timer.h"
+#include "libretro/libretro_host_interface.h"
 #include "host_interface.h"
 #include "settings.h"
 #include "xxhash.h"
@@ -11,6 +12,7 @@
 #include "xxh_x86dispatch.h"
 #endif
 #include <cinttypes>
+#include <file/file_path.h>
 Log_SetChannel(TextureReplacements);
 
 TextureReplacements g_texture_replacements;
@@ -118,7 +120,9 @@ void TextureReplacements::Shutdown()
 
 std::string TextureReplacements::GetSourceDirectory() const
 {
-  return g_host_interface->GetUserDirectoryRelativePath("textures/%s", m_game_id.c_str());
+  // Use the shader cache path as base for the textures folder
+  std::string cache_folder = g_libretro_host_interface.GetShaderCacheBasePath();
+  return g_host_interface->GetUserDirectoryRelativePath("%s" "textures" FS_OSPATH_SEPARATOR_STR "%s", cache_folder.c_str(), m_game_id.c_str());
 }
 
 TextureReplacementHash TextureReplacements::GetVRAMWriteHash(u32 width, u32 height, const void* pixels) const
@@ -133,16 +137,17 @@ std::string TextureReplacements::GetVRAMWriteDumpFilename(u32 width, u32 height,
     return {};
 
   const TextureReplacementHash hash = GetVRAMWriteHash(width, height, pixels);
-  std::string filename = g_host_interface->GetUserDirectoryRelativePath("dump/textures/%s/vram-write-%s.png",
-                                                                        m_game_id.c_str(), hash.ToString().c_str());
+  std::string cache_folder = g_libretro_host_interface.GetShaderCacheBasePath();
+  std::string filename = g_host_interface->GetUserDirectoryRelativePath("%s" "dump" FS_OSPATH_SEPARATOR_STR "textures" FS_OSPATH_SEPARATOR_STR "%s" 
+  FS_OSPATH_SEPARATOR_STR "vram-write-%s.png", cache_folder.c_str(), m_game_id.c_str(), hash.ToString().c_str());
 
-  if (FileSystem::FileExists(filename.c_str()))
+  if (!filename.empty() && path_is_valid(filename.c_str()))
     return {};
 
   const std::string dump_directory =
-    g_host_interface->GetUserDirectoryRelativePath("dump/textures/%s", m_game_id.c_str());
-  if (!FileSystem::DirectoryExists(dump_directory.c_str()) &&
-      !FileSystem::CreateDirectory(dump_directory.c_str(), false))
+    g_host_interface->GetUserDirectoryRelativePath("%s" FS_OSPATH_SEPARATOR_STR "textures" FS_OSPATH_SEPARATOR_STR "%s", cache_folder.c_str(), m_game_id.c_str());
+  if (   !path_is_directory(dump_directory.c_str())
+      && !path_mkdir(dump_directory.c_str()))
   {
     return {};
   }

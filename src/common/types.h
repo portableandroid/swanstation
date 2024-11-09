@@ -50,7 +50,11 @@ char (&__countof_ArraySizeHelper(T (&array)[N]))[N];
 #endif
 
 #ifdef __GNUC__
+#ifndef _WIN32
 #define printflike(n,m) __attribute__((format(printf,n,m)))
+#else
+#define printflike(n,m)
+#endif
 #else
 #define printflike(n,m)
 #endif
