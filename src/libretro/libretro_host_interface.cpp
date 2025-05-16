@@ -1882,10 +1882,6 @@ void LibretroHostInterface::SwitchToHardwareRenderer()
   System::RecreateGPU(renderer.value());
   display->DestroyRenderDevice();
   m_using_hardware_renderer = true;
-#ifdef PORTANDROID
-  cb_settings.video_flip_vertical = true;
-  cb_itf.cb_video_emu_xy_flip_set(cb_false, cb_true);
-#endif
 }
 
 void LibretroHostInterface::HardwareRendererContextDestroy()
@@ -1916,10 +1912,6 @@ void LibretroHostInterface::SwitchToSoftwareRenderer()
   {
     save_display = std::move(m_display);
     m_using_hardware_renderer = false;
-#ifdef PORTANDROID
-    cb_settings.video_flip_vertical = false;
-    cb_itf.cb_video_emu_xy_flip_set(cb_false, cb_false);
-#endif
   }
 
   struct retro_system_av_info avi;
