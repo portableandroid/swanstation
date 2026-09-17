@@ -15,6 +15,10 @@
 #include <pthread.h>
 #endif
 
+#if defined(__APPLE__)
+#include <libkern/OSCacheControl.h>
+#endif
+
 JitCodeBuffer::JitCodeBuffer() = default;
 
 JitCodeBuffer::~JitCodeBuffer()
@@ -224,6 +228,12 @@ void JitCodeBuffer::FlushInstructionCache(void* address, uint32_t size)
 {
 #if defined(_WIN32)
   ::FlushInstructionCache(GetCurrentProcess(), address, size);
+#elif defined(__APPLE__)
+  // Apple's own call for this, and the one clang lowers __builtin___clear_cache
+  // to on macOS anyway. Not on iOS or tvOS, where the builtin becomes a call to
+  // ___clear_cache instead - a compiler-rt symbol those SDKs do not ship, so
+  // the link ends in "Undefined symbols for architecture arm64".
+  sys_icache_invalidate(address, size);
 #elif defined(__GNUC__) || defined(__clang__)
   __builtin___clear_cache(reinterpret_cast<char*>(address), reinterpret_cast<char*>(address) + size);
 #else
@@ -231,7 +241,7 @@ void JitCodeBuffer::FlushInstructionCache(void* address, uint32_t size)
 #endif
 }
 
-#if defined(__APPLE__) && defined(__aarch64__)
+#if defined(__APPLE__) && defined(__aarch64__) && TARGET_OS_OSX
 
 void JitCodeBuffer::WriteProtect(bool enabled)
 {
