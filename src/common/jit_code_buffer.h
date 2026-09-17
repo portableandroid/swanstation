@@ -1,6 +1,10 @@
 #pragma once
 #include "types.h"
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+
 class JitCodeBuffer
 {
 public:
@@ -34,7 +38,12 @@ public:
   static void FlushInstructionCache(void* address, uint32_t size);
 
   /// For Apple Silicon - Toggles write protection on the JIT space.
-#if defined(__APPLE__) && defined(__aarch64__)
+  //
+  /// macOS only. The two calls behind it, pthread_jit_write_protect_supported_np
+  /// and pthread_jit_write_protect_np, are API_UNAVAILABLE(ios, tvos): the
+  /// embedded platforms have no per-thread W^X toggle, so there is nothing to
+  /// call and the no-op below is the whole story there.
+#if defined(__APPLE__) && defined(__aarch64__) && TARGET_OS_OSX
   static void WriteProtect(bool enabled);
 #else
   ALWAYS_INLINE static void WriteProtect(bool enabled) {}
