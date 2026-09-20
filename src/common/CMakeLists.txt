@@ -1,7 +1,5 @@
 add_library(common
   align.h
-  audio_stream.cpp
-  audio_stream.h
   bitfield.h
   bitutils.h
   byte_stream.cpp
@@ -52,8 +50,6 @@ add_library(common
   make_array.h
   md5_digest.cpp
   md5_digest.h
-  null_audio_stream.cpp
-  null_audio_stream.h
   memory_arena.cpp
   memory_arena.h
   page_fault_handler.cpp
@@ -69,6 +65,7 @@ add_library(common
   string.h
   string_util.cpp
   string_util.h
+  thread_priority.h
   timer.cpp
   timer.h
   types.h
@@ -76,10 +73,10 @@ add_library(common
   vulkan/builders.h
   vulkan/context.cpp
   vulkan/context.h
+  vulkan/embedded_shaders.cpp
+  vulkan/embedded_shaders.h
   vulkan/shader_cache.cpp
   vulkan/shader_cache.h
-  vulkan/shader_compiler.cpp
-  vulkan/shader_compiler.h
   vulkan/staging_buffer.cpp
   vulkan/staging_buffer.h
   vulkan/staging_texture.cpp
@@ -96,13 +93,11 @@ add_library(common
 target_include_directories(common PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_include_directories(common PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_include_directories(common PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../../dep/libretro-common/include")
-target_link_libraries(common PRIVATE glad stb Threads::Threads libchdr glslang vulkan-loader zlib)
+target_link_libraries(common PRIVATE glad stb Threads::Threads chdr-static vulkan-loader miniz xxhash)
 target_compile_definitions(common PRIVATE -D__LIBRETRO__)
 
 if(WIN32)
   target_sources(common PRIVATE
-    d3d11/shader_cache.cpp
-    d3d11/shader_cache.h
     d3d11/shader_compiler.cpp
     d3d11/shader_compiler.h
     d3d11/staging_texture.cpp
@@ -111,6 +106,9 @@ if(WIN32)
     d3d11/stream_buffer.h
     d3d11/texture.cpp
     d3d11/texture.h
+    d3d_common/embedded_shaders.cpp
+    d3d_common/embedded_shaders.h
+    display.hlsl.h
     windows_headers.h
   )
   if(USE_D3D12)
@@ -132,7 +130,6 @@ if(WIN32)
     )
   endif()
 
-  target_link_libraries(common PRIVATE d3dcompiler.lib)
 endif()
 
 if(ANDROID)

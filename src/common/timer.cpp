@@ -1,7 +1,4 @@
 #include "timer.h"
-#include <cstdio>
-#include <cstdlib>
-
 #ifdef _WIN32
 #include "windows_headers.h"
 #else
@@ -15,10 +12,11 @@ namespace Common {
 #ifdef _WIN32
 
 static double s_counter_frequency;
+static bool s_counter_initialized = false;
 
-Timer::Value Timer::GetValue(void)
+// counter frequency does not change after system startup, so we can cache it
+static double GetCounterFrequency()
 {
-  static bool s_counter_initialized = false;
   // even if this races, it should still result in the same value..
   if (!s_counter_initialized)
   {
@@ -27,32 +25,25 @@ Timer::Value Timer::GetValue(void)
     s_counter_frequency = static_cast<double>(Freq.QuadPart) / 1000000000.0;
     s_counter_initialized = true;
   }
+  return s_counter_frequency;
+}
+
+Timer::Value Timer::GetValue(void)
+{
+  GetCounterFrequency();
 
   Timer::Value ReturnValue;
   QueryPerformanceCounter(reinterpret_cast<LARGE_INTEGER*>(&ReturnValue));
   return ReturnValue;
 }
 
-double Timer::ConvertValueToNanoseconds(Timer::Value value)
-{
-  return (static_cast<double>(value) / s_counter_frequency);
-}
-
-double Timer::ConvertValueToMilliseconds(Timer::Value value)
-{
-  return ((static_cast<double>(value) / s_counter_frequency) / 1000000.0);
-}
-
-double Timer::ConvertValueToSeconds(Timer::Value value)
-{
-  return ((static_cast<double>(value) / s_counter_frequency) / 1000000000.0);
-}
-
 Timer::Value Timer::ConvertSecondsToValue(double s)
 {
-  return static_cast<Value>((s * 1000000000.0) * s_counter_frequency);
+  return static_cast<Value>((s * 1000000000.0) * GetCounterFrequency());
 }
+
 #else
+
 Timer::Value Timer::GetValue(void)
 {
   struct timespec tv;
@@ -60,45 +51,11 @@ Timer::Value Timer::GetValue(void)
   return ((Value)tv.tv_nsec + (Value)tv.tv_sec * 1000000000);
 }
 
-double Timer::ConvertValueToNanoseconds(Timer::Value value)
-{
-  return static_cast<double>(value);
-}
-
-double Timer::ConvertValueToMilliseconds(Timer::Value value)
-{
-  return (static_cast<double>(value) / 1000000.0);
-}
-
-double Timer::ConvertValueToSeconds(Timer::Value value)
-{
-  return (static_cast<double>(value) / 1000000000.0);
-}
-
 Timer::Value Timer::ConvertSecondsToValue(double s)
 {
   return static_cast<Value>(s * 1000000000.0);
 }
+
 #endif
-
-Timer::Timer()
-{
-  Reset();
-}
-
-void Timer::Reset()
-{
-  m_tvStartValue = GetValue();
-}
-
-double Timer::GetTimeSeconds() const
-{
-  return ConvertValueToSeconds(GetValue() - m_tvStartValue);
-}
-
-double Timer::GetTimeMilliseconds() const
-{
-  return ConvertValueToMilliseconds(GetValue() - m_tvStartValue);
-}
 
 } // namespace Common
